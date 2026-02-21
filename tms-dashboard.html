@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TMS Dashboard — Gestión de Unidades</title>
+  <meta name="description" content="Dashboard de gestión de unidades TMS con análisis de partes diarios en PDF." />
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+
+  <style>
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-card: rgba(255, 255, 255, 0.04);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(99, 102, 241, 0.4);
+      --text-primary: #f0f4ff;
+      --text-secondary: #8892b0;
+      --text-muted: #4a5568;
+      --accent-cyan: #06b6d4;
+      --accent-purple: #818cf8;
+      --accent-green: #34d399;
+      --status-operative: #34d399;
+      --status-outofservice: #f87171;
+      --status-absent: #fbbf24;
+      --glow-cyan: rgba(6, 182, 212, 0.15);
+      --glow-purple: rgba(129, 140, 248, 0.15);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: -200px;
+      right: -200px;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      bottom: -200px;
+      left: -200px;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(6, 182, 212, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* HEADER */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(10, 14, 26, 0.9);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-name span {
+      color: var(--accent-cyan);
+    }
+
+    .header-stats {
+      display: flex;
+      gap: 24px;
+    }
+
+    .hstat {
+      text-align: center;
+    }
+
+    .hstat-val {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+    }
+
+    .hstat-label {
+      font-size: 10px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .main {
+      position: relative;
+      z-index: 1;
+      padding: 28px 32px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    /* UPLOAD */
+    .upload-zone {
+      border: 2px dashed var(--border-accent);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: var(--bg-card);
+      backdrop-filter: blur(10px);
+      margin-bottom: 28px;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--accent-cyan);
+      background: var(--glow-cyan);
+      transform: translateY(-2px);
+    }
+
+    .upload-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .upload-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .upload-sub {
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    .upload-btn {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 10px 28px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      border-radius: 50px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .upload-btn:hover {
+      opacity: 0.85;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    /* FILES */
+    .files-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+
+    .file-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      padding: 6px 14px;
+      font-size: 13px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .file-chip-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+    }
+
+    .file-chip-remove {
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 16px;
+      line-height: 1;
+      margin-left: 4px;
+    }
+
+    .file-chip-remove:hover {
+      color: var(--status-outofservice);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: scale(0.9)
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1)
+      }
+    }
+
+    /* FILTER */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+
+    .filter-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .filter-dates {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .date-chip {
+      padding: 5px 14px;
+      border-radius: 50px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: transparent;
+      color: var(--text-secondary);
+    }
+
+    .date-chip.active {
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+      background: rgba(6, 182, 212, 0.1);
+    }
+
+    .date-chip:hover {
+      border-color: var(--accent-purple);
+      color: var(--accent-purple);
+    }
+
+    /* VIEW HEADER */
+    .view-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .view-title {
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .view-title span {
+      color: var(--accent-cyan);
+    }
+
+    .back-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      border-radius: 50px;
+      border: 1px solid var(--border-accent);
+      background: transparent;
+      color: var(--accent-purple);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .back-btn:hover {
+      background: var(--glow-purple);
+    }
+
+    /* CARDS */
+    .card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      transition: border-color 0.3s;
+    }
+
+    .card:hover {
+      border-color: var(--border-accent);
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+    }
+
+    .card-full {
+      grid-column: 1/-1;
+    }
+
+    /* STAT PILLS */
+    .stat-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .stat-pill {
+      flex: 1;
+      min-width: 120px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 18px;
+      text-align: center;
+    }
+
+    .stat-pill-val {
+      font-size: 28px;
+      font-weight: 800;
+    }
+
+    .stat-pill-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .stat-pill.green .stat-pill-val {
+      color: var(--status-operative);
+    }
+
+    .stat-pill.red .stat-pill-val {
+      color: var(--status-outofservice);
+    }
+
+    .stat-pill.yellow .stat-pill-val {
+      color: var(--status-absent);
+    }
+
+    .chart-wrapper {
+      position: relative;
+    }
+
+    .chart-hint {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    #detailSection {
+      display: none;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    @media(max-width:1100px) {
+      .detail-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media(max-width:700px) {
+      .detail-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* TABLE */
+    .timeline-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .timeline-table th {
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .timeline-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      color: var(--text-primary);
+    }
+
+    .timeline-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 50px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge.operative {
+      background: rgba(52, 211, 153, 0.15);
+      color: var(--status-operative);
+    }
+
+    .badge.outofservice {
+      background: rgba(248, 113, 113, 0.15);
+      color: var(--status-outofservice);
+    }
+
+    .badge.absent {
+      background: rgba(251, 191, 36, 0.15);
+      color: var(--status-absent);
+    }
+
+    /* PDF VIEWER */
+    .pdf-viewer-section {
+      margin-top: 24px;
+    }
+
+    .pdf-viewer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .pdf-date-selector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pdf-date-btn {
+      padding: 6px 16px;
+      border-radius: 50px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .pdf-date-btn.active {
+      border-color: var(--accent-purple);
+      color: var(--accent-purple);
+      background: rgba(129, 140, 248, 0.1);
+    }
+
+    .pdf-date-btn:hover {
+      border-color: var(--accent-cyan);
+    }
+
+    #pdfCanvas {
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      max-width: 100%;
+      display: block;
+      margin: 0 auto;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+
+    .pdf-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 12px;
+    }
+
+    .pdf-nav-btn {
+      padding: 8px 20px;
+      border-radius: 50px;
+      border: 1px solid var(--border-accent);
+      background: transparent;
+      color: var(--accent-cyan);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .pdf-nav-btn:hover {
+      background: var(--glow-cyan);
+    }
+
+    .pdf-nav-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .pdf-page-info {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    /* EMPTY STATE */
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--text-muted);
+      font-size: 15px;
+    }
+
+    .empty-state-icon {
+      font-size: 56px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .empty-state-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    /* TOAST */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .toast {
+      padding: 12px 20px;
+      border-radius: 12px;
+      background: rgba(20, 30, 60, 0.95);
+      border: 1px solid var(--border-accent);
+      backdrop-filter: blur(20px);
+      font-size: 13px;
+      animation: slideIn 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(120%);
+        opacity: 0
+      }
+
+      to {
+        transform: translateX(0);
+        opacity: 1
+      }
+    }
+
+    .toast.success {
+      border-color: rgba(52, 211, 153, 0.4);
+    }
+
+    .toast.error {
+      border-color: rgba(248, 113, 113, 0.4);
+    }
+
+    /* LOADING */
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(10, 14, 26, 0.85);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .loading-overlay.show {
+      display: flex;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--accent-cyan);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .clear-btn {
+      padding: 7px 16px;
+      border-radius: 50px;
+      border: 1px solid rgba(248, 113, 113, 0.4);
+      background: transparent;
+      color: var(--status-outofservice);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.2s;
+    }
+
+    .clear-btn:hover {
+      background: rgba(248, 113, 113, 0.1);
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+    <div style="color:var(--text-secondary);font-size:14px;">Procesando PDF...</div>
+  </div>
+  <div class="toast-container" id="toastContainer"></div>
+
+  <header class="header">
+    <div class="header-brand">
+      <div class="brand-icon">📊</div>
+      <div class="brand-name">TMS <span>Dashboard</span></div>
+    </div>
+    <div class="header-stats">
+      <div class="hstat">
+        <div class="hstat-val" id="hStatPdfs">0</div>
+        <div class="hstat-label">PDFs cargados</div>
+      </div>
+      <div class="hstat">
+        <div class="hstat-val" id="hStatUnits">0</div>
+        <div class="hstat-label">Unidades</div>
+      </div>
+      <div class="hstat">
+        <div class="hstat-val" id="hStatOp" style="color:var(--status-operative)">0</div>
+        <div class="hstat-label">Operativos</div>
+      </div>
+      <div class="hstat" id="cloudStatus" title="Estado de la sincronización en la nube">
+        <div class="hstat-val" id="cloudIcon">☁️</div>
+        <div class="hstat-label">Cloud</div>
+      </div>
+      <button class="clear-btn" id="clearAllBtn" onclick="clearAll()" title="Eliminar todos los PDFs guardados"
+        style="display:none">
+        🗑️ Limpiar todo
+      </button>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- Upload -->
+    <div class="upload-zone" id="uploadZone">
+      <div class="upload-icon">📁</div>
+      <div class="upload-title">Cargá tus partes TMS en PDF</div>
+      <div class="upload-sub">Podés cargar múltiples PDFs de distintas fechas</div>
+      <label class="upload-btn" for="fileInput">Seleccionar archivos</label>
+      <input type="file" id="fileInput" multiple accept=".pdf" />
+    </div>
+
+    <div class="files-list" id="filesList"></div>
+
+    <div class="filter-bar" id="filterBar" style="display:none">
+      <span class="filter-label">📅 Filtrar por fecha:</span>
+      <div class="filter-dates" id="filterDates"></div>
+      <button class="date-chip active" id="btnAllDates" onclick="selectAllDates()">Todas</button>
+    </div>
+
+    <!-- OVERVIEW -->
+    <div id="overviewSection">
+      <div class="view-header">
+        <div class="view-title">Vista General — <span>Unidades</span></div>
+      </div>
+      <div class="stat-row" id="globalStatRow" style="display:none">
+        <div class="stat-pill green">
+          <div class="stat-pill-val" id="gStatOp">0</div>
+          <div class="stat-pill-label">✅ Operativos (final)</div>
+        </div>
+        <div class="stat-pill red">
+          <div class="stat-pill-val" id="gStatFs">0</div>
+          <div class="stat-pill-label">✖ Fuera de servicio (final)</div>
+        </div>
+        <div class="stat-pill yellow">
+          <div class="stat-pill-val" id="gStatNp">0</div>
+          <div class="stat-pill-label">📌 No presente (final)</div>
+        </div>
+      </div>
+      <div class="card card-full" id="overviewChartCard" style="display:none">
+        <div class="card-title">Estado ronda final por unidad</div>
+        <div class="chart-wrapper"><canvas id="overviewChart" style="max-height:380px;"></canvas></div>
+        <div class="chart-hint">💡 Hacé click en una barra para ver el detalle de esa unidad</div>
+      </div>
+      <div class="empty-state" id="emptyState">
+        <div class="empty-state-icon">📂</div>
+        <div class="empty-state-title">Todavía no hay datos</div>
+        <div>Cargá uno o más PDFs de partes TMS para comenzar el análisis</div>
+      </div>
+    </div>
+
+    <!-- DETAIL -->
+    <div id="detailSection">
+      <div class="view-header">
+        <div class="view-title">Unidad <span id="detailUnitName">—</span></div>
+        <button class="back-btn" onclick="goBack()">← Volver a la vista general</button>
+      </div>
+      <div class="stat-row">
+        <div class="stat-pill green">
+          <div class="stat-pill-val" id="dStatOp">0</div>
+          <div class="stat-pill-label">✅ Veces Operativo (final)</div>
+        </div>
+        <div class="stat-pill red">
+          <div class="stat-pill-val" id="dStatFs">0</div>
+          <div class="stat-pill-label">✖ Fuera de servicio (final)</div>
+        </div>
+        <div class="stat-pill yellow">
+          <div class="stat-pill-val" id="dStatNp">0</div>
+          <div class="stat-pill-label">📌 No presente (final)</div>
+        </div>
+      </div>
+      <div class="detail-grid">
+        <div class="card">
+          <div class="card-title">Ronda Inicial</div><canvas id="donutRondaInicial" style="max-height:220px;"></canvas>
+        </div>
+        <div class="card">
+          <div class="card-title">Estado Ronda Final</div><canvas id="donutRondaFinal"
+            style="max-height:220px;"></canvas>
+        </div>
+        <div class="card">
+          <div class="card-title">Horas Toma de Fuerza</div><canvas id="lineHoras" style="max-height:220px;"></canvas>
+        </div>
+        <div class="card">
+          <div class="card-title">Ciclos</div><canvas id="lineCiclos" style="max-height:220px;"></canvas>
+        </div>
+        <div class="card" style="grid-column:1/-1">
+          <div class="card-title">Historial de Intervenciones</div>
+          <div style="overflow-x:auto;">
+            <table class="timeline-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Ronda Inicial</th>
+                  <th>Estado Final</th>
+                  <th>Horas TDF</th>
+                  <th>Ciclos</th>
+                  <th>Descripción</th>
+                </tr>
+              </thead>
+              <tbody id="historicoBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="pdf-viewer-section card">
+        <div class="card-title">Visor de PDF</div>
+        <div class="pdf-viewer-header">
+          <div style="font-size:14px;color:var(--text-secondary)">Seleccioná una fecha para ver el parte</div>
+          <div class="pdf-date-selector" id="pdfDateSelector"></div>
+        </div>
+        <canvas id="pdfCanvas"></canvas>
+        <div class="pdf-nav" id="pdfNav" style="display:none">
+          <button class="pdf-nav-btn" id="pdfPrevBtn" onclick="pdfChangePage(-1)">← Anterior</button>
+          <span class="pdf-page-info" id="pdfPageInfo">Página 1 / 1</span>
+          <button class="pdf-nav-btn" id="pdfNextBtn" onclick="pdfChangePage(1)">Siguiente →</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // ─── STATE ───────────────────────────────────────────────────────────────────
+    const state = {
+      pdfs: [],
+      activeDates: new Set(),
+      currentUnit: null,
+      pdfDoc: null,
+      pdfCurrentPage: 1,
+      pdfTotalPages: 1,
+      pdfCurrentDateKey: null,
+    };
+    let overviewChartInst = null, donutRIInst = null, donutRFInst = null, lineHInst = null, lineCInst = null;
+
+    // ─── FIREBASE CONFIG ──────────────────────────────────────────────────────────
+    const firebaseConfig = {
+      apiKey: "AIzaSyDVeuhJt3jdlkGcLr0nvuJA4qZldZp0eXw",
+      authDomain: "gestionflota-ea461.firebaseapp.com",
+      databaseURL: "https://gestionflota-ea461-default-rtdb.firebaseio.com",
+      projectId: "gestionflota-ea461",
+      storageBucket: "gestionflota-ea461.firebasestorage.app",
+      messagingSenderId: "43528636288",
+      appId: "1:43528636288:web:c8a9f3f740bcfb7e856365"
+    };
+
+    // Initialize Firebase (Compat)
+    firebase.initializeApp(firebaseConfig);
+    const dbCloud = firebase.database();
+    const stCloud = firebase.storage();
+
+    function setCloudStatus(status) {
+      const icon = document.getElementById('cloudIcon');
+      if (!icon) return;
+      if (status === 'syncing') { icon.textContent = '🔄'; icon.style.animation = 'spin 2s linear infinite'; }
+      if (status === 'online') { icon.textContent = '☁️'; icon.style.animation = 'none'; }
+      if (status === 'error') { icon.textContent = '⚠️'; icon.style.animation = 'none'; }
+      if (status === 'offline') { icon.textContent = '💤'; icon.style.animation = 'none'; }
+    }
+
+    async function pushToCloud(entry) {
+      setCloudStatus('syncing');
+      try {
+        const fileRef = stCloud.ref().child(`tms_pdfs/${entry.fileName}`);
+        const metadataRef = dbCloud.ref(`tms_metadata/${entry.fileName.replace(/[.#$[\]]/g, '_')}`);
+
+        // 1. Upload PDF bytes to Storage
+        const blob = new Blob([entry.pdfBytes], { type: 'application/pdf' });
+        await fileRef.put(blob);
+        const downloadUrl = await fileRef.getDownloadURL();
+
+        // 2. Upload metadata + rows to Database
+        const cloudEntry = {
+          fileName: entry.fileName,
+          dateStr: entry.dateStr,
+          dateTs: entry.dateObj?.getTime() ?? 0,
+          rows: entry.rows,
+          downloadUrl: downloadUrl,
+          updatedAt: firebase.database.ServerValue.TIMESTAMP
+        };
+        await metadataRef.set(cloudEntry);
+        setCloudStatus('online');
+      } catch (e) {
+        console.error('Cloud Push Error:', e);
+        setCloudStatus('error');
+      }
+    }
+
+    async function dbDeleteCloud(fileName) {
+      setCloudStatus('syncing');
+      try {
+        const fileRef = stCloud.ref().child(`tms_pdfs/${fileName}`);
+        const metadataRef = dbCloud.ref(`tms_metadata/${fileName.replace(/[.#$[\]]/g, '_')}`);
+        await Promise.all([
+          fileRef.delete().catch(() => { }), // Ignore error if already gone
+          metadataRef.remove()
+        ]);
+        setCloudStatus('online');
+      } catch (e) {
+        console.error('Cloud Delete Error:', e);
+        setCloudStatus('error');
+      }
+    }
+
+    async function dbClearCloud() {
+      setCloudStatus('syncing');
+      try {
+        // Clearing database is easy
+        await dbCloud.ref('tms_metadata').remove();
+        // Clearing storage is harder (iterative), usually requires listing.
+        // For simplicity, we just clear the metadata which effectively removes them from apps.
+        setCloudStatus('online');
+      } catch (e) {
+        setCloudStatus('error');
+      }
+    }
+
+    async function pullFromCloud() {
+      setCloudStatus('syncing');
+      try {
+        const snapshot = await dbCloud.ref('tms_metadata').once('value');
+        const data = snapshot.val();
+        if (!data) { setCloudStatus('online'); return; }
+
+        let newItems = 0;
+        for (const key in data) {
+          const cloudEntry = data[key];
+          // Check if we already have it locally
+          if (state.pdfs.find(p => p.fileName === cloudEntry.fileName)) continue;
+
+          // Download PDF bytes if missing
+          const response = await fetch(cloudEntry.downloadUrl);
+          const bytes = await response.arrayBuffer();
+
+          const entry = {
+            fileName: cloudEntry.fileName,
+            dateStr: cloudEntry.dateStr,
+            dateObj: new Date(cloudEntry.dateTs),
+            rows: cloudEntry.rows,
+            pdfBytes: bytes
+          };
+
+          state.pdfs.push(entry);
+          state.activeDates.add(entry.dateStr);
+          await dbSave(entry); // Save to local IndexedDB too
+          newItems++;
+        }
+        if (newItems > 0) {
+          renderUI();
+          showToast(`☁️ ${newItems} parte(s) sincronizado(s) desde la nube`, 'success');
+        }
+        setCloudStatus('online');
+      } catch (e) {
+        console.error('Cloud Pull Error:', e);
+        setCloudStatus('error');
+      }
+    }
+
+    // ─── INDEXEDDB PERSISTENCE ────────────────────────────────────────────────────
+    // PDFs are stored locally in the browser so they survive page reloads.
+    // On a different PC/browser the user needs to re-upload the files.
+    const DB_NAME = 'tms-dashboard', DB_STORE = 'pdfs', DB_VER = 1;
+    let db = null;
+
+    function openDB() {
+      return new Promise((res, rej) => {
+        const req = indexedDB.open(DB_NAME, DB_VER);
+        req.onupgradeneeded = e => e.target.result.createObjectStore(DB_STORE, { keyPath: 'fileName' });
+        req.onsuccess = e => { db = e.target.result; res(db); };
+        req.onerror = e => rej(e.target.error);
+      });
+    }
+
+    async function dbSave(pdfEntry) {
+      if (!db) return;
+      // dateObj is not serializable directly — store as timestamp
+      const record = { ...pdfEntry, dateTs: pdfEntry.dateObj?.getTime() ?? 0 };
+      delete record.dateObj;
+      return new Promise((res, rej) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).put(record);
+        tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+      });
+    }
+
+    async function dbDelete(fileName) {
+      if (!db) return;
+      return new Promise((res, rej) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).delete(fileName);
+        tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+      });
+    }
+
+    async function dbClear() {
+      if (!db) return;
+      return new Promise((res, rej) => {
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).clear();
+        tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+      });
+    }
+
+    async function dbLoadAll() {
+      if (!db) return [];
+      return new Promise((res, rej) => {
+        const req = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).getAll();
+        req.onsuccess = e => res(e.target.result);
+        req.onerror = e => rej(e.target.error);
+      });
+    }
+
+    // Startup: open DB then restore any previously saved PDFs
+    async function initDB() {
+      try {
+        await openDB();
+        const saved = await dbLoadAll();
+        if (saved.length) {
+          showLoading(true);
+          for (const rec of saved) {
+            rec.dateObj = new Date(rec.dateTs);
+            delete rec.dateTs;
+            state.pdfs.push(rec);
+            state.activeDates.add(rec.dateStr);
+          }
+          showLoading(false);
+          renderUI();
+          showToast(`📂 ${saved.length} parte(s) restaurado(s) desde el almacenamiento local`, 'success');
+        }
+        // After loading local data, sync with cloud
+        pullFromCloud();
+      } catch (e) {
+        console.warn('IndexedDB no disponible, los datos no persistirán:', e);
+        pullFromCloud();
+      }
+    }
+    initDB();
+
+    // ─── UPLOAD ───────────────────────────────────────────────────────────────────
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+
+    uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+    uploadZone.addEventListener('drop', e => { e.preventDefault(); uploadZone.classList.remove('drag-over'); handleFiles([...e.dataTransfer.files]); });
+    fileInput.addEventListener('change', () => handleFiles([...fileInput.files]));
+
+    async function handleFiles(files) {
+      const pdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+      if (!pdfs.length) { showToast('Solo se aceptan archivos PDF', 'error'); return; }
+      showLoading(true);
+      for (const file of pdfs) {
+        if (state.pdfs.find(p => p.fileName === file.name)) { showToast(`"${file.name}" ya fue cargado`, 'error'); continue; }
+        try {
+          const bytes = await readBytes(file);
+          const parsed = await parsePDF(bytes, file.name);
+          if (parsed) {
+            const entry = { ...parsed, pdfBytes: bytes, fileName: file.name };
+            state.pdfs.push(entry);
+            state.activeDates.add(parsed.dateStr);
+            await dbSave(entry);          // 💾 persist to IndexedDB
+            pushToCloud(entry);           // ☁️ push to Firebase
+            showToast(`✅ ${file.name} — ${parsed.rows.length} unidades`, 'success');
+          }
+        } catch (e) { showToast(`❌ Error al procesar "${file.name}"`, 'error'); console.error(e); }
+      }
+      fileInput.value = '';
+      showLoading(false);
+      renderUI();
+    }
+
+    function readBytes(file) {
+      return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = e => res(e.target.result); fr.onerror = rej; fr.readAsArrayBuffer(file); });
+    }
+
+    // ─── PDF PARSER v2 — SPATIAL COLUMN DETECTION ────────────────────────────────
+    // Unit numbers in these PDFs have the format "1.040", "1.041", etc.
+    // Using a strict regex prevents matching stray 4-digit numbers (years, references, etc.)
+    const NRO_REGEX = /^1[.,]\d{3}$/;
+
+    async function parsePDF(bytes, fileName) {
+      const pdf = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+
+      // 1. Extract date from first page ─────────────────────────────────────────
+      let dateStr = '', dateObj = null;
+      {
+        const firstPage = await pdf.getPage(1);
+        const ct = await firstPage.getTextContent();
+        const flat = ct.items.map(i => i.str).join(' ');
+        // Try "10/2/2026"
+        let m = flat.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (m) {
+          const [, d, mo, y] = m.map(Number);
+          dateObj = new Date(y, mo - 1, d);
+          dateStr = fmt(d, mo, y);
+        } else {
+          // Try "10 2 2.026" pattern following "Fecha:"
+          m = flat.match(/Fecha[:\s]+(\d{1,2})\s+(\d{1,2})\s+([\d.]+)/i);
+          if (m) {
+            const d = +m[1], mo = +m[2];
+            const y = parseInt(m[3].replace(/\./g, '').padStart(4, '20'));
+            dateObj = new Date(y, mo - 1, d); dateStr = fmt(d, mo, y);
+          }
+        }
+        // Fallback: filename "DD.MM.YYYY"
+        if (!dateStr) {
+          m = fileName.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/);
+          if (m) { const d = +m[1], mo = +m[2], y = +m[3]; dateObj = new Date(y, mo - 1, d); dateStr = fmt(d, mo, y); }
+          else { dateStr = fileName; dateObj = new Date(); }
+        }
+      }
+
+      // 2. Extract rows (one page at a time, spatial columns) ───────────────────
+      const rows = [];
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const ct = await page.getTextContent();
+
+        // PDF.js gives us transform[4]=x, transform[5]=y (from bottom-left, y grows up)
+        const items = ct.items
+          .map(it => ({ str: it.str.trim(), x: Math.round(it.transform[4]), y: Math.round(it.transform[5]) }))
+          .filter(it => it.str.length > 0);
+
+        // Group into horizontal lines (Y tolerance ±4px)
+        const lineMap = new Map();
+        for (const it of items) {
+          let placed = false;
+          for (const [ky, arr] of lineMap) {
+            if (Math.abs(ky - it.y) <= 4) { arr.push(it); placed = true; break; }
+          }
+          if (!placed) lineMap.set(it.y, [it]);
+        }
+        // Sort top-to-bottom (descending Y in PDF.js = ascending visual top)
+        const lines = [...lineMap.entries()]
+          .sort((a, b) => b[0] - a[0])
+          .map(([, its]) => its.sort((a, b) => a.x - b.x));
+
+        // Find header row: must contain "Nro"/"Interno" AND "Ronda"
+        let headerIdx = -1;
+        let colX = null;
+        for (let i = 0; i < lines.length; i++) {
+          const s = lines[i].map(it => it.str).join(' ');
+          if (/nro|interno/i.test(s) && /ronda/i.test(s)) {
+            headerIdx = i;
+            // Build column anchors from header line + next line (header may wrap)
+            const hi = [...lines[i], ...(lines[i + 1] ?? [])];
+
+            // pdfplumber showed exact positions:
+            //   Nro~52, Ronda inicial~106-136, Estado~188, Descripcion~340, Horas~462, Ciclos~525
+            // We read them dynamically but also apply known fallbacks
+            const fx = re => hi.find(it => re.test(it.str))?.x;
+            colX = {
+              nroX: fx(/^(nro|interno)$/i) ?? 40,
+              rondaIX: fx(/^(ronda|inicial)$/i) ?? 100,
+              estadoX: fx(/^(estado)$/i) ?? 180,
+              descX: fx(/^(descripcion|descripción)$/i) ?? 280,
+              horasX: fx(/^(horas|toma|fuerza)$/i) ?? 455,
+              ciclosX: fx(/^ciclos$/i) ?? 520,
+            };
+            break;
+          }
+        }
+        if (headerIdx === -1 || !colX) continue;
+
+        // Walk data lines, group into unit blocks
+        // A new block starts when a line contains a unit number in the NRO column (x < rondaIX + margin)
+        const blocks = [];
+        let cur = null;
+        for (let i = headerIdx + 1; i < lines.length; i++) {
+          const line = lines[i];
+          const nroItem = line.find(it => NRO_REGEX.test(it.str) && it.x <= colX.rondaIX + 10);
+          if (nroItem) {
+            if (cur) blocks.push(cur);
+            cur = { nroStr: nroItem.str, items: [...line] };
+          } else if (cur) {
+            cur.items.push(...line);
+          }
+        }
+        if (cur) blocks.push(cur);
+
+        // Assign each block's items to columns by X range
+        for (const block of blocks) {
+          const nro = block.nroStr.replace(/[.,]/g, ''); // "1.040" → "1040"
+          const all = block.items;
+
+          // Column extraction: items whose x falls in [minX, maxX)
+          const col = (minX, maxX) =>
+            all.filter(it => it.x >= minX && it.x < maxX).map(it => it.str).join(' ').trim();
+
+          // Column boundaries:
+          // - rondaI:  [rondaIX .. estadoX)
+          // - estadoF: [estadoX .. estadoX+90)  ← fixed width keeps status words in column
+          // - desc:    [estadoX+90 .. horasX-10) ← starts well before the header label (x≈340)
+          //             because content can start as early as x≈270
+          // - horas:   [horasX-10 .. ciclosX)
+          // - ciclos:  [ciclosX .. ∞)
+          const descStartX = colX.estadoX + 90; // ≈ 270, safely past the last status word
+
+          const rondaIText = col(colX.rondaIX, colX.estadoX);
+          const estadoFText = col(colX.estadoX, descStartX);
+          const descText = col(descStartX, colX.horasX - 10);
+          const horasText = col(colX.horasX - 10, colX.ciclosX);
+          const ciclosText = col(colX.ciclosX, 9999);
+
+          rows.push({
+            nroInterno: nro,
+            rondaInicial: statusFromText(rondaIText),
+            estadoFinal: statusFromText(estadoFText),
+            horas: parseSpanishNum(horasText),
+            ciclos: parseSpanishNum(ciclosText),
+            descripcion: descText.substring(0, 300),
+          });
+        }
+      }
+
+      return { dateStr, dateObj, rows };
+    }
+
+    // Helpers ────────────────────────────────────────────────────────────────────
+
+    function fmt(d, m, y) {
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    }
+
+    function statusFromText(text) {
+      const t = text.toLowerCase();
+      if (t.includes('fuera de servicio')) return 'Fuera de servicio';
+      if (t.includes('no presente')) return 'No presente';
+      if (t.includes('operativo')) return 'Operativo';
+      return 'Desconocido';
+    }
+
+    // Parse Spanish number format where dot = thousands separator:
+    //   "13.075"  → 13075    "1.385" → 1385    "185.487" → 185487    "1" → 1
+    function parseSpanishNum(text) {
+      if (!text || !text.trim()) return null;
+      const raw = text.trim().split(/\s/)[0]; // take first token only
+      if (!raw) return null;
+      // X.XXX pattern → integer (thousands separator)
+      if (/^\d{1,3}\.\d{3}$/.test(raw)) return parseInt(raw.replace('.', ''), 10);
+      // X.XXX.XXX → integer
+      if (/^(\d{1,3}\.)+\d{3}$/.test(raw)) return parseInt(raw.replace(/\./g, ''), 10);
+      // Plain integer
+      if (/^\d+$/.test(raw)) return parseInt(raw, 10);
+      // Comma decimal
+      const n = parseFloat(raw.replace(',', '.'));
+      return isNaN(n) ? null : n;
+    }
+
+    // ─── RENDER UI ────────────────────────────────────────────────────────────────
+    function renderUI() {
+      renderFileChips();
+      renderFilterBar();
+      renderOverview();
+      updateHeaderStats();
+      // Show/hide the clear-all button
+      const clearBtn = document.getElementById('clearAllBtn');
+      if (clearBtn) clearBtn.style.display = state.pdfs.length ? 'inline-flex' : 'none';
+    }
+
+    function renderFileChips() {
+      document.getElementById('filesList').innerHTML = state.pdfs.map((p, i) => `
+    <div class="file-chip">
+      <div class="file-chip-dot"></div>
+      <span>${p.fileName}</span>
+      <span style="color:var(--text-muted);font-size:11px;">${p.dateStr}</span>
+      <span class="file-chip-remove" onclick="removePdf(${i})">×</span>
+    </div>`).join('');
+    }
+
+    function removePdf(idx) {
+      const removed = state.pdfs.splice(idx, 1)[0];
+      dbDelete(removed.fileName);       // 🗑️ remove from IndexedDB
+      dbDeleteCloud(removed.fileName);  // ☁️ remove from Cloud
+      state.activeDates.delete(removed.dateStr);
+      state.pdfs.forEach(p => state.activeDates.add(p.dateStr));
+      renderUI();
+    }
+
+    async function clearAll() {
+      if (!confirm('¿Eliminar todos los PDFs guardados (LOCAL y NUBE)?')) return;
+      await Promise.all([dbClear(), dbClearCloud()]);
+      state.pdfs = []; state.activeDates.clear(); state.currentUnit = null;
+      document.getElementById('overviewSection').style.display = 'block';
+      document.getElementById('detailSection').style.display = 'none';
+      renderUI();
+      showToast('🗑️ Todos los datos fueron eliminados', 'success');
+    }
+
+    function renderFilterBar() {
+      const bar = document.getElementById('filterBar');
+      if (!state.pdfs.length) { bar.style.display = 'none'; return; }
+      bar.style.display = 'flex';
+      const sorted = [...new Set(state.pdfs.map(p => p.dateStr))].sort((a, b) => dateFromStr(a) - dateFromStr(b));
+      document.getElementById('filterDates').innerHTML = sorted.map(d =>
+        `<button class="date-chip ${state.activeDates.has(d) ? 'active' : ''}" onclick="toggleDate('${d}')">${d}</button>`
+      ).join('');
+      document.getElementById('btnAllDates').className = 'date-chip' + (state.activeDates.size === sorted.length ? ' active' : '');
+    }
+
+    function dateFromStr(s) {
+      const [d, m, y] = s.split('/').map(Number); return new Date(y, m - 1, d).getTime();
+    }
+
+    function toggleDate(d) {
+      if (state.activeDates.has(d)) { if (state.activeDates.size > 1) state.activeDates.delete(d); }
+      else state.activeDates.add(d);
+      renderFilterBar(); renderOverview();
+      if (state.currentUnit) renderDetail(state.currentUnit);
+    }
+    function selectAllDates() {
+      state.pdfs.forEach(p => state.activeDates.add(p.dateStr));
+      renderFilterBar(); renderOverview();
+      if (state.currentUnit) renderDetail(state.currentUnit);
+    }
+
+    function getFilteredPdfs() { return state.pdfs.filter(p => state.activeDates.has(p.dateStr)); }
+    function getFilteredRows() { return getFilteredPdfs().flatMap(p => p.rows.map(r => ({ ...r, dateStr: p.dateStr, dateObj: p.dateObj }))); }
+
+    function renderOverview() {
+      const empty = document.getElementById('emptyState');
+      const chartCard = document.getElementById('overviewChartCard');
+      const statRow = document.getElementById('globalStatRow');
+      if (!state.pdfs.length) { empty.style.display = 'block'; chartCard.style.display = 'none'; statRow.style.display = 'none'; return; }
+      empty.style.display = 'none'; chartCard.style.display = 'block'; statRow.style.display = 'flex';
+
+      const rows = getFilteredRows();
+      document.getElementById('gStatOp').textContent = rows.filter(r => r.estadoFinal === 'Operativo').length;
+      document.getElementById('gStatFs').textContent = rows.filter(r => r.estadoFinal === 'Fuera de servicio').length;
+      document.getElementById('gStatNp').textContent = rows.filter(r => r.estadoFinal === 'No presente').length;
+
+      const units = [...new Set(rows.map(r => r.nroInterno))].sort((a, b) => +a - (+b));
+      const opD = units.map(u => rows.filter(r => r.nroInterno === u && r.estadoFinal === 'Operativo').length);
+      const fsD = units.map(u => rows.filter(r => r.nroInterno === u && r.estadoFinal === 'Fuera de servicio').length);
+      const npD = units.map(u => rows.filter(r => r.nroInterno === u && r.estadoFinal === 'No presente').length);
+
+      if (overviewChartInst) overviewChartInst.destroy();
+      overviewChartInst = new Chart(document.getElementById('overviewChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: units.map(u => `U${u}`), datasets: [
+            { label: '✅ Operativo', data: opD, backgroundColor: 'rgba(52,211,153,0.75)', borderRadius: 6, borderSkipped: false },
+            { label: '✖ Fuera de servicio', data: fsD, backgroundColor: 'rgba(248,113,113,0.75)', borderRadius: 6, borderSkipped: false },
+            { label: '📌 No presente', data: npD, backgroundColor: 'rgba(251,191,36,0.75)', borderRadius: 6, borderSkipped: false },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: true,
+          plugins: {
+            legend: { labels: { color: '#8892b0', font: { family: 'Inter', size: 12 } } },
+            tooltip: { callbacks: { title: c => `Unidad ${units[c[0].dataIndex]}` } }
+          },
+          scales: {
+            x: { ticks: { color: '#8892b0', font: { family: 'Inter' } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+            y: { ticks: { color: '#8892b0', font: { family: 'Inter' }, stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.06)' }, beginAtZero: true }
+          },
+          onClick: (_, el) => { if (el.length) openUnit(units[el[0].index]); },
+          onHover: (_, el) => { document.getElementById('overviewChart').style.cursor = el.length ? 'pointer' : 'default'; }
+        }
+      });
+    }
+
+    function updateHeaderStats() {
+      const rows = getFilteredRows();
+      document.getElementById('hStatPdfs').textContent = state.pdfs.length;
+      document.getElementById('hStatUnits').textContent = [...new Set(rows.map(r => r.nroInterno))].length;
+      document.getElementById('hStatOp').textContent = rows.filter(r => r.estadoFinal === 'Operativo').length;
+    }
+
+    // ─── DETAIL VIEW ──────────────────────────────────────────────────────────────
+    function openUnit(unitId) {
+      state.currentUnit = unitId;
+      state.pdfCurrentDateKey = null;
+      document.getElementById('overviewSection').style.display = 'none';
+      document.getElementById('detailSection').style.display = 'block';
+      renderDetail(unitId);
+    }
+    function goBack() {
+      state.currentUnit = null; state.pdfCurrentDateKey = null;
+      document.getElementById('overviewSection').style.display = 'block';
+      document.getElementById('detailSection').style.display = 'none';
+      const cv = document.getElementById('pdfCanvas'); cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+    }
+
+    function renderDetail(unitId) {
+      document.getElementById('detailUnitName').textContent = unitId;
+      const allRows = getFilteredRows();
+      const unitRows = allRows.filter(r => r.nroInterno === unitId).sort((a, b) => a.dateObj - b.dateObj);
+
+      // Stats
+      const op = unitRows.filter(r => r.estadoFinal === 'Operativo').length;
+      const fs = unitRows.filter(r => r.estadoFinal === 'Fuera de servicio').length;
+      const np = unitRows.filter(r => r.estadoFinal === 'No presente').length;
+      document.getElementById('dStatOp').textContent = op;
+      document.getElementById('dStatFs').textContent = fs;
+      document.getElementById('dStatNp').textContent = np;
+
+      // Donuts
+      const cntStatus = (rows, field) => {
+        const c = { 'Operativo': 0, 'Fuera de servicio': 0, 'No presente': 0 };
+        rows.forEach(r => { if (c[r[field]] !== undefined) c[r[field]]++; });
+        return c;
+      };
+      const riC = cntStatus(unitRows, 'rondaInicial');
+      const rfC = cntStatus(unitRows, 'estadoFinal');
+      const dColors = ['rgba(52,211,153,0.8)', 'rgba(248,113,113,0.8)', 'rgba(251,191,36,0.8)'];
+      const dLabels = ['Operativo', 'Fuera de servicio', 'No presente'];
+      const mkDonut = (ctxId, counts, inst) => {
+        if (inst) inst.destroy();
+        return new Chart(document.getElementById(ctxId).getContext('2d'), {
+          type: 'doughnut',
+          data: { labels: dLabels, datasets: [{ data: dLabels.map(l => counts[l]), backgroundColor: dColors, borderWidth: 0, hoverOffset: 6 }] },
+          options: {
+            responsive: true, maintainAspectRatio: true, cutout: '65%',
+            plugins: { legend: { position: 'bottom', labels: { color: '#8892b0', font: { family: 'Inter', size: 11 }, padding: 12 } } }
+          }
+        });
+      };
+      donutRIInst = mkDonut('donutRondaInicial', riC, donutRIInst);
+      donutRFInst = mkDonut('donutRondaFinal', rfC, donutRFInst);
+
+      // Line charts — only show dates where we have data for this unit
+      const dates = unitRows.map(r => r.dateStr);
+      const horas = unitRows.map(r => r.horas ?? null);
+      const ciclos = unitRows.map(r => r.ciclos ?? null);
+
+      const mkLine = (canvasId, label, data, color, inst) => {
+        if (inst) inst.destroy();
+        return new Chart(document.getElementById(canvasId).getContext('2d'), {
+          type: 'line',
+          data: { labels: dates, datasets: [{ label, data, borderColor: color, backgroundColor: color.replace('1)', '0.1)'), tension: 0.3, pointRadius: 5, pointHoverRadius: 7, fill: true, spanGaps: true }] },
+          options: {
+            responsive: true, maintainAspectRatio: true,
+            plugins: { legend: { labels: { color: '#8892b0', font: { family: 'Inter', size: 11 } } } },
+            scales: {
+              x: { ticks: { color: '#8892b0', font: { family: 'Inter', size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+              y: { ticks: { color: '#8892b0', font: { family: 'Inter', size: 11 } }, grid: { color: 'rgba(255,255,255,0.06)' }, beginAtZero: true }
+            }
+          }
+        });
+      };
+      lineHInst = mkLine('lineHoras', 'Horas TDF', horas, 'rgba(6,182,212,1)', lineHInst);
+      lineCInst = mkLine('lineCiclos', 'Ciclos', ciclos, 'rgba(129,140,248,1)', lineCInst);
+
+      // Historial table
+      document.getElementById('historicoBody').innerHTML = unitRows.map(r => `
+    <tr>
+      <td>${r.dateStr}</td>
+      <td>${mkBadge(r.rondaInicial)}</td>
+      <td>${mkBadge(r.estadoFinal)}</td>
+      <td>${r.horas !== null ? r.horas.toLocaleString('es-AR') : '—'}</td>
+      <td>${r.ciclos !== null ? r.ciclos.toLocaleString('es-AR') : '—'}</td>
+      <td style="color:var(--text-secondary);font-size:12px;max-width:320px;">${r.descripcion || '—'}</td>
+    </tr>`).join('');
+
+      // PDF viewer buttons
+      const pdfsForUnit = getFilteredPdfs().filter(p => p.rows.some(r => r.nroInterno === unitId));
+      document.getElementById('pdfDateSelector').innerHTML = pdfsForUnit.map(p => `
+    <button class="pdf-date-btn ${state.pdfCurrentDateKey === p.dateStr ? 'active' : ''}"
+      onclick="loadPdfViewer('${p.dateStr}')">${p.dateStr}</button>`).join('');
+      if (pdfsForUnit.length && !state.pdfCurrentDateKey) loadPdfViewer(pdfsForUnit[0].dateStr);
+      else if (state.pdfCurrentDateKey) loadPdfViewer(state.pdfCurrentDateKey);
+    }
+
+    function mkBadge(status) {
+      const cls = { Operativo: 'operative', 'Fuera de servicio': 'outofservice', 'No presente': 'absent' }[status] || 'absent';
+      const icon = { Operativo: '✅', 'Fuera de servicio': '✖', 'No presente': '📌' }[status] || '?';
+      return `<span class="badge ${cls}">${icon} ${status}</span>`;
+    }
+
+    // ─── PDF VIEWER ────────────────────────────────────────────────────────────────
+    async function loadPdfViewer(dateStr) {
+      state.pdfCurrentDateKey = dateStr;
+      document.querySelectorAll('.pdf-date-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === dateStr));
+      const pdfEntry = state.pdfs.find(p => p.dateStr === dateStr);
+      if (!pdfEntry) return;
+      showLoading(true);
+      try {
+        state.pdfDoc = await pdfjsLib.getDocument({ data: pdfEntry.pdfBytes.slice(0) }).promise;
+        state.pdfCurrentPage = 1; state.pdfTotalPages = state.pdfDoc.numPages;
+        await renderPdfPage();
+        document.getElementById('pdfNav').style.display = state.pdfTotalPages > 1 ? 'flex' : 'none';
+        updatePdfNav();
+      } catch (e) { showToast('❌ Error al cargar el PDF', 'error'); console.error(e); }
+      showLoading(false);
+    }
+
+    async function renderPdfPage() {
+      if (!state.pdfDoc) return;
+      const page = await state.pdfDoc.getPage(state.pdfCurrentPage);
+      const vp = page.getViewport({ scale: window.devicePixelRatio > 1 ? 1.8 : 1.4 });
+      const canvas = document.getElementById('pdfCanvas');
+      canvas.height = vp.height; canvas.width = vp.width; canvas.style.maxWidth = '100%';
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+      document.getElementById('pdfPageInfo').textContent = `Página ${state.pdfCurrentPage} / ${state.pdfTotalPages}`;
+    }
+    async function pdfChangePage(delta) {
+      const n = state.pdfCurrentPage + delta;
+      if (n < 1 || n > state.pdfTotalPages) return;
+      state.pdfCurrentPage = n; await renderPdfPage(); updatePdfNav();
+    }
+    function updatePdfNav() {
+      document.getElementById('pdfPrevBtn').disabled = state.pdfCurrentPage === 1;
+      document.getElementById('pdfNextBtn').disabled = state.pdfCurrentPage === state.pdfTotalPages;
+    }
+
+    // ─── UTILS ────────────────────────────────────────────────────────────────────
+    function showToast(msg, type = 'success') {
+      const c = document.getElementById('toastContainer');
+      const t = document.createElement('div'); t.className = `toast ${type}`; t.innerHTML = msg;
+      c.appendChild(t); setTimeout(() => t.remove(), 4000);
+    }
+    function showLoading(show) { document.getElementById('loadingOverlay').classList.toggle('show', show); }
+  </script>
+</body>
+
+</html>
