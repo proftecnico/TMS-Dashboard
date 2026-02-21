@@ -13,14 +13,31 @@
     };
     let overviewChartInst = null, donutRIInst = null, donutRFInst = null, lineHInst = null, lineCInst = null;
 
-    // Initialize Firebase (Compat) - firebaseConfig should be defined in config.js
+    // Initialize Firebase (Compat)
+    let dbCloud = null;
+    let stCloud = null;
+
     if (window.firebaseConfig) {
-        firebase.initializeApp(window.firebaseConfig);
+        try {
+            firebase.initializeApp(window.firebaseConfig);
+            dbCloud = firebase.database();
+            stCloud = firebase.storage();
+            console.log("✅ Firebase inicializado correctamente.");
+        } catch (e) {
+            console.error("❌ Error al inicializar Firebase:", e);
+        }
     } else {
-        console.error("Firebase configuration not found. Make sure config.js is loaded.");
+        console.error("❌ Configuración de Firebase no encontrada (window.firebaseConfig). Verifica assets/js/config.js");
     }
-    const dbCloud = firebase.database();
-    const stCloud = firebase.storage();
+
+    // Helper to check if cloud is ready
+    function isCloudReady() {
+        if (!dbCloud || !stCloud) {
+            console.warn("⚠️ Los servicios de nube no están listos.");
+            return false;
+        }
+        return true;
+    }
 
     function setCloudStatus(status) {
         const icon = document.getElementById('cloudIcon');
@@ -32,6 +49,7 @@
     }
 
     async function pushToCloud(entry) {
+        if (!isCloudReady()) return;
         setCloudStatus('syncing');
         try {
             const fileRef = stCloud.ref().child(`tms_pdfs/${entry.fileName}`);
@@ -60,6 +78,7 @@
     }
 
     async function dbDeleteCloud(fileName) {
+        if (!isCloudReady()) return;
         setCloudStatus('syncing');
         try {
             const fileRef = stCloud.ref().child(`tms_pdfs/${fileName}`);
@@ -76,6 +95,7 @@
     }
 
     async function dbClearCloud() {
+        if (!isCloudReady()) return;
         setCloudStatus('syncing');
         try {
             // Clearing database is easy
@@ -89,6 +109,7 @@
     }
 
     async function pullFromCloud() {
+        if (!isCloudReady()) return;
         setCloudStatus('syncing');
         try {
             const snapshot = await dbCloud.ref('tms_metadata').once('value');
