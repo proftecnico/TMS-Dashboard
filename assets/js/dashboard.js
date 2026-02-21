@@ -15,13 +15,11 @@
 
     // Initialize Firebase (Compat)
     let dbCloud = null;
-    let stCloud = null;
 
     if (window.firebaseConfig) {
         try {
             firebase.initializeApp(window.firebaseConfig);
             dbCloud = firebase.database();
-            stCloud = firebase.storage();
             console.log("✅ Firebase inicializado correctamente.");
         } catch (e) {
             console.error("❌ Error al inicializar Firebase:", e);
@@ -30,13 +28,34 @@
         console.error("❌ Configuración de Firebase no encontrada (window.firebaseConfig). Verifica assets/js/config.js");
     }
 
-    // Helper to check if cloud is ready
+    // Helper to check if cloud is ready (Only DB needed now)
     function isCloudReady() {
-        if (!dbCloud || !stCloud) {
-            console.warn("⚠️ Los servicios de nube no están listos.");
+        if (!dbCloud) {
+            console.warn("⚠️ Base de datos no conectada.");
             return false;
         }
         return true;
+    }
+
+    // Base64 Helpers
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+        const binary_string = window.atob(base64);
+        const len = binary_string.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binary_string.charCodeAt(i);
+        }
+        return bytes.buffer;
     }
 
     function setCloudStatus(status) {
@@ -52,21 +71,20 @@
         if (!isCloudReady()) return;
         setCloudStatus('syncing');
         try {
-            const fileRef = stCloud.ref().child(`tms_pdfs/${entry.fileName}`);
-            const metadataRef = dbCloud.ref(`tms_metadata/${entry.fileName.replace(/[.#$[\]]/g, '_')}`);
+            const key = entry.fileName.replace(/[.#$[\]]/g, '_');
+            const dataRef = dbCloud.ref(`tms_data/${key}`);
+            const metadataRef = dbCloud.ref(`tms_metadata/${key}`);
 
-            // 1. Upload PDF bytes to Storage
-            const blob = new Blob([entry.pdfBytes], { type: 'application/pdf' });
-            await fileRef.put(blob);
-            const downloadUrl = await fileRef.getDownloadURL();
+            // 1. Convert PDF to Base64
+            const b64 = arrayBufferToBase64(entry.pdfBytes);
 
-            // 2. Upload metadata + rows to Database
+            // 2. Upload metadata + data to Database
             const cloudEntry = {
                 fileName: entry.fileName,
                 dateStr: entry.dateStr,
                 dateTs: entry.dateObj?.getTime() ?? 0,
                 rows: entry.rows,
-                downloadUrl: downloadUrl,
+                pdfB64: b64, // Stored directly in DB
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
             };
             await metadataRef.set(cloudEntry);
@@ -81,12 +99,8 @@
         if (!isCloudReady()) return;
         setCloudStatus('syncing');
         try {
-            const fileRef = stCloud.ref().child(`tms_pdfs/${fileName}`);
             const metadataRef = dbCloud.ref(`tms_metadata/${fileName.replace(/[.#$[\]]/g, '_')}`);
-            await Promise.all([
-                fileRef.delete().catch(() => { }), // Ignore error if already gone
-                metadataRef.remove()
-            ]);
+            await metadataRef.remove();
             setCloudStatus('online');
         } catch (e) {
             console.error('Cloud Delete Error:', e);
@@ -122,9 +136,8 @@
                 // Check if we already have it locally
                 if (state.pdfs.find(p => p.fileName === cloudEntry.fileName)) continue;
 
-                // Download PDF bytes if missing
-                const response = await fetch(cloudEntry.downloadUrl);
-                const bytes = await response.arrayBuffer();
+                // Data is now embedded in metadata
+                const bytes = base64ToArrayBuffer(cloudEntry.pdfB64);
 
                 const entry = {
                     fileName: cloudEntry.fileName,
