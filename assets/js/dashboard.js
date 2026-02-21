@@ -58,6 +58,11 @@
         return bytes.buffer;
     }
 
+    function ensureArray(data) {
+        if (!data) return [];
+        return Array.isArray(data) ? data : Object.values(data);
+    }
+
     function setCloudStatus(status) {
         const icon = document.getElementById('cloudIcon');
         if (!icon) return;
@@ -151,10 +156,11 @@
                 state.activeDates.add(entry.dateStr);
                 await dbSave(entry); // Save to local IndexedDB too
                 newItems++;
+                console.log(`📥 Sincronizado: ${entry.fileName} (${entry.rows.length} filas)`);
             }
-            if (newItems > 0) {
+            if (newItems > 0 || Object.keys(data).length > 0) {
                 renderUI();
-                showToast(`☁️ ${newItems} parte(s) sincronizado(s) desde la nube`, 'success');
+                if (newItems > 0) showToast(`☁️ ${newItems} parte(s) sincronizado(s) desde la nube`, 'success');
             }
             setCloudStatus('online');
         } catch (e) {
@@ -493,14 +499,30 @@
     }
 
     function getFilteredPdfs() { return state.pdfs.filter(p => state.activeDates.has(p.dateStr)); }
-    function getFilteredRows() { return getFilteredPdfs().flatMap(p => p.rows.map(r => ({ ...r, dateStr: p.dateStr, dateObj: p.dateObj }))); }
+    function getFilteredRows() {
+        return getFilteredPdfs().flatMap(p => {
+            return ensureArray(p.rows).map(r => ({ ...r, dateStr: p.dateStr, dateObj: p.dateObj }));
+        });
+    }
 
     function renderOverview() {
         const empty = document.getElementById('emptyState');
         const chartCard = document.getElementById('overviewChartCard');
         const statRow = document.getElementById('globalStatRow');
         if (!empty || !chartCard || !statRow) return;
-        if (!state.pdfs.length) { empty.style.display = 'block'; chartCard.style.display = 'none'; statRow.style.display = 'none'; return; }
+
+        console.log("📊 Renderizando Dashboard:", {
+            pdfs: state.pdfs.length,
+            activeDates: [...state.activeDates],
+            totalRows: getFilteredRows().length
+        });
+
+        if (!state.pdfs.length) {
+            empty.style.display = 'block';
+            chartCard.style.display = 'none';
+            statRow.style.display = 'none';
+            return;
+        }
         empty.style.display = 'none'; chartCard.style.display = 'block'; statRow.style.display = 'flex';
 
         const rows = getFilteredRows();
@@ -638,7 +660,8 @@
       <td style="color:var(--text-secondary);font-size:12px;max-width:320px;">${r.descripcion || '—'}</td>
     </tr>`).join('');
 
-        const pdfsForUnit = getFilteredPdfs().filter(p => p.rows.some(r => r.nroInterno === unitId));
+        const filteredPdfs = getFilteredPdfs();
+        const pdfsForUnit = filteredPdfs.filter(p => ensureArray(p.rows).some(r => r.nroInterno === unitId));
         document.getElementById('pdfDateSelector').innerHTML = pdfsForUnit.map(p => `
     <button class="pdf-date-btn ${state.pdfCurrentDateKey === p.dateStr ? 'active' : ''}"
       onclick="loadPdfViewer('${p.dateStr}')">${p.dateStr}</button>`).join('');
